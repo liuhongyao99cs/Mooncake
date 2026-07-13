@@ -1100,10 +1100,17 @@ std::vector<int> DummyClient::batch_put_from(
     }
 
     const size_t successful_bytes = sum_successful_sizes(results, sizes);
+    const uint64_t latency = elapsed_us_since(start_time);
     if (successful_bytes > 0) {
         ObserveTransferMetric(TransferOperationKind::kWrite, "batch_put_from",
-                              successful_bytes, elapsed_us_since(start_time),
+                              successful_bytes, latency,
                               true);
+    }
+    // L3 write latency
+    int success_count = 0;
+    for (const auto& r : results) { if (r == 0) success_count++; }
+    if (metrics_) {
+        metrics_->ObserveL3Write(latency, successful_bytes, success_count > 0);
     }
 
     return results;
@@ -1131,9 +1138,16 @@ std::vector<int64_t> DummyClient::batch_get_into(
     }
 
     const size_t total_bytes = sum_positive_results(results);
+    const uint64_t latency = elapsed_us_since(start_time);
     if (total_bytes > 0) {
         ObserveTransferMetric(TransferOperationKind::kRead, "batch_get_into",
-                              total_bytes, elapsed_us_since(start_time), true);
+                              total_bytes, latency, true);
+    }
+    // L3 read latency
+    int success_count = 0;
+    for (const auto& r : results) { if (r > 0) success_count++; }
+    if (metrics_) {
+        metrics_->ObserveL3Read(latency, total_bytes, success_count > 0);
     }
 
     return results;
@@ -1166,10 +1180,17 @@ std::vector<int> DummyClient::batch_put_from_multi_buffers(
     }
     const size_t successful_bytes =
         sum_successful_nested_sizes(results, all_sizes);
+    const uint64_t latency = elapsed_us_since(start_time);
     if (successful_bytes > 0) {
         ObserveTransferMetric(TransferOperationKind::kWrite,
                               "batch_put_from_multi_buffers", successful_bytes,
-                              elapsed_us_since(start_time), true);
+                              latency, true);
+    }
+    // L3 write latency
+    int success_count = 0;
+    for (const auto& r : results) { if (r == 0) success_count++; }
+    if (metrics_) {
+        metrics_->ObserveL3Write(latency, successful_bytes, success_count > 0);
     }
     return results;
 }
@@ -1193,10 +1214,17 @@ std::vector<int> DummyClient::batch_get_into_multi_buffers(
         results.push_back(to_py_ret(result));
     }
     const size_t total_bytes = sum_positive_results(results);
+    const uint64_t latency = elapsed_us_since(start_time);
     if (total_bytes > 0) {
         ObserveTransferMetric(TransferOperationKind::kRead,
                               "batch_get_into_multi_buffers", total_bytes,
-                              elapsed_us_since(start_time), true);
+                              latency, true);
+    }
+    // L3 read latency
+    int success_count = 0;
+    for (const auto& r : results) { if (r > 0) success_count++; }
+    if (metrics_) {
+        metrics_->ObserveL3Read(latency, total_bytes, success_count > 0);
     }
     return results;
 }

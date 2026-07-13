@@ -3556,12 +3556,19 @@ std::vector<int> RealClient::batch_put_from(
             [&](uint64_t latency_us, const auto &ret) {
                 std::vector<int> py_results;
                 py_results.reserve(ret.size());
+                int success_count = 0;
                 for (const auto &item : ret) {
                     py_results.push_back(to_py_ret(item));
+                    if (item.has_value()) success_count++;
                 }
+                uint64_t total_bytes =
+                    sum_successful_sizes(py_results, sizes);
                 client_->ObserveTransferOperation(
                     TransferOperationKind::kWrite, "batch_put_from",
-                    sum_successful_sizes(py_results, sizes), latency_us);
+                    total_bytes, latency_us);
+                // L3 write latency: full end-to-end including RPC + transfer
+                client_->ObserveL3Write(latency_us, total_bytes,
+                                        success_count > 0);
             });
     std::vector<int> results;
     results.reserve(internal_results.size());
@@ -4158,12 +4165,18 @@ std::vector<int64_t> RealClient::batch_get_into(
             [&](uint64_t latency_us, const auto &ret) {
                 std::vector<int64_t> py_results;
                 py_results.reserve(ret.size());
+                int success_count = 0;
                 for (const auto &item : ret) {
                     py_results.push_back(to_py_ret(item));
+                    if (item.has_value()) success_count++;
                 }
+                uint64_t total_bytes = sum_positive_results(py_results);
                 client_->ObserveTransferOperation(
                     TransferOperationKind::kRead, "batch_get_into",
-                    sum_positive_results(py_results), latency_us);
+                    total_bytes, latency_us);
+                // L3 read/hit latency: full end-to-end including RPC + transfer
+                client_->ObserveL3Read(latency_us, total_bytes,
+                                       success_count > 0);
             });
     std::vector<int64_t> results;
     results.reserve(internal_results.size());
@@ -4785,13 +4798,19 @@ std::vector<int> RealClient::batch_put_from_multi_buffers(
             [&](uint64_t latency_us, const auto &ret) {
                 std::vector<int> py_results;
                 py_results.reserve(ret.size());
+                int success_count = 0;
                 for (const auto &item : ret) {
                     py_results.push_back(to_py_ret(item));
+                    if (item.has_value()) success_count++;
                 }
+                uint64_t total_bytes =
+                    sum_successful_nested_sizes(py_results, sizes);
                 client_->ObserveTransferOperation(
                     TransferOperationKind::kWrite,
-                    "batch_put_from_multi_buffers",
-                    sum_successful_nested_sizes(py_results, sizes), latency_us);
+                    "batch_put_from_multi_buffers", total_bytes, latency_us);
+                // L3 write latency
+                client_->ObserveL3Write(latency_us, total_bytes,
+                                         success_count > 0);
             });
     std::vector<int> results;
     results.reserve(internal_results.size());
@@ -4855,13 +4874,19 @@ std::vector<int> RealClient::batch_get_into_multi_buffers(
             [&](uint64_t latency_us, const auto &ret) {
                 std::vector<int> py_results;
                 py_results.reserve(ret.size());
+                int success_count = 0;
                 for (const auto &item : ret) {
                     py_results.push_back(to_py_ret(item));
+                    if (item.has_value()) success_count++;
                 }
+                uint64_t total_bytes = sum_positive_results(py_results);
                 client_->ObserveTransferOperation(
                     TransferOperationKind::kRead,
                     "batch_get_into_multi_buffers",
-                    sum_positive_results(py_results), latency_us);
+                    total_bytes, latency_us);
+                // L3 read latency
+                client_->ObserveL3Read(latency_us, total_bytes,
+                                       success_count > 0);
             });
     std::vector<int> results;
     results.reserve(internal_results.size());

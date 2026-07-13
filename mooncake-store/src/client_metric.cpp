@@ -83,6 +83,7 @@ ClientMetric::ClientMetric(uint64_t interval_seconds,
       master_client_metric(labels),
       transfer_operation_metric(labels),
       ssd_metric(labels),
+      l3_metric(labels),
       should_stop_metrics_thread_(false),
       metrics_interval_seconds_(interval_seconds),
       bandwidth_reporting_enabled_(bandwidth_reporting_enabled),
@@ -128,6 +129,7 @@ void ClientMetric::serialize(std::string& str) {
     }
     transfer_operation_metric.serialize(str);
     ssd_metric.serialize(str);
+    l3_metric.serialize(str);
 }
 
 std::string ClientMetric::summary_metrics() {
@@ -142,6 +144,8 @@ std::string ClientMetric::summary_metrics() {
     ss << transfer_operation_metric.summary_metrics();
     ss << "\n";
     ss << ssd_metric.summary_metrics();
+    ss << "\n";
+    ss << l3_metric.summary_metrics();
     return ss.str();
 }
 

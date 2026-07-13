@@ -657,11 +657,157 @@ struct SsdMetric {
     }
 };
 
+struct L3Metric {
+    explicit L3Metric(std::map<std::string, std::string> labels = {})
+        : write_latency_us("mooncake_l3_write_latency_us",
+                           "L3 (Mooncake Store) full write latency per "
+                           "batch_put_from call (us)",
+                           kLatencyBucket, labels),
+          read_latency_us("mooncake_l3_read_latency_us",
+                          "L3 (Mooncake Store) full read latency per "
+                          "batch_get_into call (us)",
+                          kLatencyBucket, labels),
+          write_count("mooncake_l3_write_count_total",
+                      "Total L3 write requests", labels),
+          read_count("mooncake_l3_read_count_total",
+                     "Total L3 read requests", labels),
+          write_bytes("mooncake_l3_write_bytes_total",
+                      "Total bytes written to L3", labels),
+          read_bytes("mooncake_l3_read_bytes_total",
+                     "Total bytes read from L3", labels),
+          write_success_count("mooncake_l3_write_success_count_total",
+                              "Successful L3 write requests", labels),
+          read_success_count("mooncake_l3_read_success_count_total",
+                             "Successful L3 read requests", labels),
+          start_time_(std::chrono::steady_clock::now()) {}
+
+    ylt::metric::histogram_t write_latency_us;
+    ylt::metric::histogram_t read_latency_us;
+    ylt::metric::counter_t   write_count;
+    ylt::metric::counter_t   read_count;
+    ylt::metric::counter_t   write_bytes;
+    ylt::metric::counter_t   read_bytes;
+    ylt::metric::counter_t   write_success_count;
+    ylt::metric::counter_t   read_success_count;
+
+    void ObserveWrite(uint64_t latency_us, uint64_t bytes, bool success) {
+        write_latency_us.observe(latency_us);
+        write_count.inc();
+        write_bytes.inc(bytes);
+        if (success) write_success_count.inc();
+    }
+
+    void ObserveRead(uint64_t latency_us, uint64_t bytes, bool success) {
+        read_latency_us.observe(latency_us);
+        read_count.inc();
+        read_bytes.inc(bytes);
+        if (success) read_success_count.inc();
+    }
+
+    void serialize(std::string& str) {
+        write_latency_us.serialize(str);
+        read_latency_us.serialize(str);
+        write_count.serialize(str);
+        read_count.serialize(str);
+        write_bytes.serialize(str);
+        read_bytes.serialize(str);
+        write_success_count.serialize(str);
+        read_success_count.serialize(str);
+    }
+
+    std::string summary_metrics() {
+        std::stringstream ss;
+        ss << "=== L3 (Mooncake Store) Interaction Metrics ===\n";
+
+        auto w_cnt = write_count.value();
+        auto r_cnt = read_count.value();
+        auto w_bytes = write_bytes.value();
+        auto r_bytes = read_bytes.value();
+        auto w_ok = write_success_count.value();
+        auto r_ok = read_success_count.value();
+
+        double elapsed_s =
+            std::max(
+                std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start_time_)
+                    .count(),
+                1e-9);
+
+        ss << "Write: reqs=" << w_cnt << ", success=" << w_ok
+           << " (" << (w_cnt > 0 ? 100.0 * w_ok / w_cnt : 0.0) << "%)"
+           << ", bytes=" << byte_size_to_string(w_bytes);
+        if (w_bytes > 0 && elapsed_s > 0)
+            ss << ", throughput="
+               << byte_size_to_string(static_cast<int64_t>(w_bytes / elapsed_s))
+               << "/s";
+        ss << "\n";
+
+        ss << "Read:  reqs=" << r_cnt << ", success=" << r_ok
+           << " (" << (r_cnt > 0 ? 100.0 * r_ok / r_cnt : 0.0) << "%)"
+           << ", bytes=" << byte_size_to_string(r_bytes);
+        if (r_bytes > 0 && elapsed_s > 0)
+            ss << ", throughput="
+               << byte_size_to_string(static_cast<int64_t>(r_bytes / elapsed_s))
+               << "/s";
+        ss << "\n";
+
+        // Latency percentiles
+        ss << "\n=== L3 Latency Summary (microseconds) ===\n";
+        ss << "Write: " << format_l3_latency_summary(write_latency_us)
+           << "\n";
+        ss << "Read:  " << format_l3_latency_summary(read_latency_us) << "\n";
+        return ss;
+    }
+
+   private:
+    std::chrono::steady_clock::time_point start_time_;
+
+    std::string format_l3_latency_summary(ylt::metric::histogram_t& hist) {
+        auto sum_ptr = const_cast<ylt::metric::histogram_t&>(hist)
+                           .get_bucket_counts();
+        if (sum_ptr.empty()) return "No data";
+
+        int64_t total_count = 0;
+        for (auto& bucket : sum_ptr) total_count += bucket->value();
+        if (total_count == 0) return "No data";
+
+        std::stringstream ss;
+        ss << "count=" << total_count;
+
+        int64_t p95_target = (total_count * 95) / 100;
+        int64_t p99_target = (total_count * 99) / 100;
+        int64_t cumulative = 0;
+
+        double p95_bucket = 0, p99_bucket = 0, max_bucket = 0;
+        for (size_t i = 0; i < sum_ptr.size() && i < kLatencyBucket.size();
+             ++i) {
+            cumulative += sum_ptr[i]->value();
+            if (p95_bucket == 0 && cumulative >= p95_target)
+                p95_bucket = kLatencyBucket[i];
+            if (p99_bucket == 0 && cumulative >= p99_target)
+                p99_bucket = kLatencyBucket[i];
+        }
+        for (size_t i = sum_ptr.size(); i > 0; --i) {
+            size_t idx = i - 1;
+            if (idx < kLatencyBucket.size() &&
+                sum_ptr[idx]->value() > 0) {
+                max_bucket = kLatencyBucket[idx];
+                break;
+            }
+        }
+        if (p95_bucket > 0) ss << ", p95<" << p95_bucket << "μs";
+        if (p99_bucket > 0) ss << ", p99<" << p99_bucket << "μs";
+        if (max_bucket > 0) ss << ", max<" << max_bucket << "μs";
+        return ss.str();
+    }
+};
+
 struct ClientMetric {
     TransferMetric transfer_metric;
     MasterClientMetric master_client_metric;
     TransferOperationMetric transfer_operation_metric;
     SsdMetric ssd_metric;
+    L3Metric     l3_metric;
 
     /**
      * @brief Creates a ClientMetric instance based on environment variables
@@ -682,6 +828,16 @@ struct ClientMetric {
                                   const std::string& op_name, uint64_t bytes,
                                   uint64_t latency_us) {
         transfer_operation_metric.Observe(kind, op_name, bytes, latency_us);
+    }
+
+    void ObserveL3Write(uint64_t latency_us, uint64_t bytes,
+                        bool success = true) {
+        l3_metric.ObserveWrite(latency_us, bytes, success);
+    }
+
+    void ObserveL3Read(uint64_t latency_us, uint64_t bytes,
+                       bool success = true) {
+        l3_metric.ObserveRead(latency_us, bytes, success);
     }
 
     void serialize(std::string& str);
