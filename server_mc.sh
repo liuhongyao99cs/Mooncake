@@ -16,6 +16,29 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ---------- 自定义 Mooncake 编译版本 (不覆盖系统安装) ----------
+# 设 MC_CUSTOM_DIR=/path/to/Mooncake 即可让 SGLang import 自定义编译的 mooncake,
+# 不需要 pip install --force-reinstall, 不影响系统已安装的版本.
+# 原理: 把 mooncake-wheel/ 目录插到 PYTHONPATH 最前面, Python 会优先从这里 import.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MC_CUSTOM_DIR="${MC_CUSTOM_DIR:-}"
+if [[ -n "$MC_CUSTOM_DIR" ]]; then
+    MC_WHEEL_DIR="${MC_CUSTOM_DIR}/mooncake-wheel"
+    if [[ ! -f "${MC_WHEEL_DIR}/mooncake/store.so" ]]; then
+        echo "[mooncake] ERROR: MC_CUSTOM_DIR=$MC_CUSTOM_DIR 但找不到 mooncake Python 包:"
+        echo "[mooncake]        ${MC_WHEEL_DIR}/mooncake/store.so"
+        echo "[mooncake]        请先编译并执行: cd ${MC_CUSTOM_DIR} && OUTPUT_DIR=dist ./scripts/build_wheel.sh"
+        exit 1
+    fi
+    export PYTHONPATH="${MC_WHEEL_DIR}:${PYTHONPATH:-}"
+    # LD_LIBRARY_PATH 确保自编译的 .so 能找到依赖
+    export LD_LIBRARY_PATH="${MC_CUSTOM_DIR}/build/mooncake-store/src:${MC_CUSTOM_DIR}/build/mooncake-common:${MC_CUSTOM_DIR}/build/mooncake-common/etcd:${MC_CUSTOM_DIR}/build/mooncake-transfer-engine/src:${MC_WHEEL_DIR}/mooncake:${LD_LIBRARY_PATH:-}"
+    echo "[mooncake] 使用自定义编译 Mooncake: ${MC_WHEEL_DIR}"
+    python3 -c "import mooncake; print('[mooncake] using:', mooncake.__path__)" || echo "[mooncake] WARNING: 无法从自定义路径加载 mooncake"
+else
+    echo "[mooncake] 使用系统安装的 Mooncake (设 MC_CUSTOM_DIR=/path/to/Mooncake 切换自定义版本)"
+fi
+
 # ---------- 强制使用本地 sglang 代码 (覆盖 pip 安装版本) ----------
 # 默认使用 pip 安装的 sglang 版本.
 # 如需使用本地补丁, 通过环境变量指定:

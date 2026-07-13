@@ -45,8 +45,31 @@ MC_ENABLE_OFFLOAD="${MC_ENABLE_OFFLOAD:-true}"
 # 这是排查 "SSD offload 每一步耗时" 最直接的数据源之一, 与 SGLang 侧 /metrics 是两套独立指标.
 MC_METRICS_PORT="${MC_METRICS_PORT:-9003}"
 
+# ---------- 自定义编译版本支持 ----------
+# 设 MC_CUSTOM_DIR=/path/to/Mooncake 即可使用自定义编译的 mooncake_master,
+# 不会覆盖系统已安装的版本 (不影响 pip 包和 /usr/local/bin 下的二进制).
+# 不设则使用系统安装的 mooncake_master (原有行为).
+SCRIPT_DIR_MC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MC_CUSTOM_DIR="${MC_CUSTOM_DIR:-}"
+if [[ -n "$MC_CUSTOM_DIR" ]]; then
+    MC_CUSTOM_MASTER="${MC_CUSTOM_DIR}/build/mooncake-store/src/mooncake_master"
+    if [[ ! -x "$MC_CUSTOM_MASTER" ]]; then
+        echo "[mooncake] ERROR: MC_CUSTOM_DIR=$MC_CUSTOM_DIR 但找不到编译产物:"
+        echo "[mooncake]        $MC_CUSTOM_MASTER"
+        echo "[mooncake]        请先在 ${MC_CUSTOM_DIR} 下执行 cmake + make 编译."
+        exit 1
+    fi
+    MOONCAKE_MASTER_BIN="$MC_CUSTOM_MASTER"
+    # 设置 LD_LIBRARY_PATH 让自定义二进制能找到自编译的 .so
+    export LD_LIBRARY_PATH="${MC_CUSTOM_DIR}/build/mooncake-store/src:${MC_CUSTOM_DIR}/build/mooncake-common:${MC_CUSTOM_DIR}/build/mooncake-common/etcd:${MC_CUSTOM_DIR}/build/mooncake-transfer-engine/src:${LD_LIBRARY_PATH:-}"
+    echo "[mooncake] 使用自定义编译版本: $MOONCAKE_MASTER_BIN"
+else
+    MOONCAKE_MASTER_BIN="mooncake_master"
+    echo "[mooncake] 使用系统安装版本 (设 MC_CUSTOM_DIR=/path/to/Mooncake 切换自定义版本)"
+fi
+
 # ---------- 前置检查 ----------
-if ! command -v mooncake_master >/dev/null 2>&1; then
+if ! command -v "$MOONCAKE_MASTER_BIN" >/dev/null 2>&1; then
     echo "[mooncake] ERROR: mooncake_master not found in PATH."
     echo "[mooncake]        pip install mooncake-transfer-engine"
     echo "[mooncake]        或从源码编译: https://github.com/kvcache-ai/Mooncake"
@@ -61,7 +84,7 @@ fi
 # enable_offload/metrics_port 都定义在 master.cpp 里, 文件名里根本没有这几个
 # 字, 永远会返回 "No modules matched", 跟 flag 是否存在无关。
 # 真正可靠的方式是 `--help`(列出所有 module 的所有 flag) 再用 grep 过滤 flag 名。
-MOONCAKE_MASTER_HELP="$(mooncake_master --help 2>&1 || true)"
+MOONCAKE_MASTER_HELP="$("$MOONCAKE_MASTER_BIN" --help 2>&1 || true)"
 
 # 检测当前 mooncake_master 二进制是否支持 --enable_offload flag
 # (不同版本的 Mooncake 该 gflag 可能不存在, 传入不支持的 flag 会直接启动失败)
@@ -99,7 +122,7 @@ echo "[mooncake] open another terminal and run: ./server_mc.sh"
 echo "[mooncake] press Ctrl-C to stop."
 echo ""
 
-exec mooncake_master \
+exec "$MOONCAKE_MASTER_BIN" \
     --enable_http_metadata_server="${ENABLE_HTTP_METADATA}" \
     --http_metadata_server_port="${HTTP_METADATA_PORT}" \
     --eviction_high_watermark_ratio="${EVICTION_HIGH_WATERMARK}" \
