@@ -551,6 +551,20 @@ class Client {
         }
     }
 
+    void ObserveL3Write(uint64_t latency_us, uint64_t bytes,
+                        bool success = true) {
+        if (metrics_ != nullptr) {
+            metrics_->ObserveL3Write(latency_us, bytes, success);
+        }
+    }
+
+    void ObserveL3Read(uint64_t latency_us, uint64_t bytes,
+                       bool success = true) {
+        if (metrics_ != nullptr) {
+            metrics_->ObserveL3Read(latency_us, bytes, success);
+        }
+    }
+
     // For Prometheus-style metrics
     tl::expected<std::string, ErrorCode> SerializeMetrics() {
         if (metrics_ == nullptr) {
