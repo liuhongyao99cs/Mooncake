@@ -1,8 +1,8 @@
 [submodule "extern/pybind11"]
 	path = extern/pybind11
-	url = https://github.com/pybind/pybind11.git
+	url = https://gitee.com/liuhongyao99cs/pybind11.git
 	branch = stable
 [submodule "extern/yalantinglibs"]
 	path = extern/yalantinglibs
-	url = https://github.com/alibaba/yalantinglibs.git
+	url = https://gitee.com/liuhongyao99cs/yalantinglibs.git
 	branch = v0.5.7
