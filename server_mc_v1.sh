@@ -353,7 +353,10 @@ if [[ "$MC_ENABLE_SSD_OFFLOAD" == "1" ]]; then
     # 但底层 mooncake 引擎在开启 offload 时会自行读取这两个环境变量, 所以在这里 export 即可生效
     # (若你的 mooncake 版本不识别, 只是被忽略, 不会报错).
     MC_OFFLOAD_LOCAL_BUFFER_BYTES="${MC_OFFLOAD_LOCAL_BUFFER_BYTES:-2147483648}"  # 默认 2GB 缓冲
-    MC_OFFLOAD_USE_URING="${MC_OFFLOAD_USE_URING:-1}"
+    # io_uring 默认关闭: 容器环境通常不支持 io_uring (Operation not permitted),
+    # 初始化失败后 UringFile 不会 fallback 到 PosixFile, 导致 SSD 写入全部失败.
+    # 设为 0 使用 PosixFile (pwrite), 兼容所有环境.
+    MC_OFFLOAD_USE_URING="${MC_OFFLOAD_USE_URING:-0}"
     export MOONCAKE_OFFLOAD_LOCAL_BUFFER_SIZE_BYTES="$MC_OFFLOAD_LOCAL_BUFFER_BYTES"
     export MOONCAKE_OFFLOAD_USE_URING="$MC_OFFLOAD_USE_URING"
 
