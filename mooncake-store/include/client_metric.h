@@ -811,9 +811,14 @@ struct L3Metric {
         ss << "\n=== L3 Cache Hit/Miss Stats ===\n";
         ss << "Read:  total_keys=" << r_batch_keys_total
            << ", hit=" << r_hits << ", miss=" << r_misses
-           << ", hit_rate=" << (r_batch_keys_total > 0
-                ? std::fixed << std::setprecision(2)
-                << (100.0 * r_hits / r_batch_keys_total) : 0.0) << "%\n";
+           << ", hit_rate=";
+        if (r_batch_keys_total > 0) {
+            ss << std::fixed << std::setprecision(2)
+               << (100.0 * r_hits / r_batch_keys_total);
+        } else {
+            ss << "0.00";
+        }
+        ss << "%\n";
         ss << "Write: total_keys=" << w_batch_keys_total
            << ", avg_keys_per_batch=" << (w_cnt > 0 ? w_batch_keys_total / w_cnt : 0) << "\n";
 
