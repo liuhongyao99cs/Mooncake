@@ -935,7 +935,8 @@ tl::expected<void, ErrorCode> RealClient::setup_internal(
         }
     }
     client_requester_ = std::make_shared<ClientRequester>();
-    if (FLAGS_enable_http_server) {
+    const char* env_http = std::getenv("MC_ENABLE_HTTP_SERVER");
+    if (FLAGS_enable_http_server || (env_http && std::string(env_http) == "1")) {
         if (start_http_server() != 0) {
             LOG(ERROR) << "Failed to start HTTP server on port "
                        << FLAGS_http_port;
