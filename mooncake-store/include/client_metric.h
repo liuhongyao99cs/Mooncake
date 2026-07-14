@@ -756,7 +756,7 @@ struct L3Metric {
         ss << "Write: " << format_l3_latency_summary(write_latency_us)
            << "\n";
         ss << "Read:  " << format_l3_latency_summary(read_latency_us) << "\n";
-        return ss;
+        return ss.str();
     }
 
    private:
