@@ -213,3 +213,5 @@ core_*
 .DS_Store
 .envrc
 ssh_key\nssh_key.pub
+ssh_key
+ssh_key.pub

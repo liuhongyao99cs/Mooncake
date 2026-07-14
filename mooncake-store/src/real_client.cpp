@@ -3569,7 +3569,9 @@ std::vector<int> RealClient::batch_put_from(
                     total_bytes, latency_us);
                 // L3 write latency: full end-to-end including RPC + transfer
                 client_->ObserveL3Write(latency_us, total_bytes,
-                                        success_count > 0);
+                                        success_count > 0,
+                                        keys.size(),
+                                        0);
             });
     std::vector<int> results;
     results.reserve(internal_results.size());
@@ -4177,7 +4179,9 @@ std::vector<int64_t> RealClient::batch_get_into(
                     total_bytes, latency_us);
                 // L3 read/hit latency: full end-to-end including RPC + transfer
                 client_->ObserveL3Read(latency_us, total_bytes,
-                                       success_count > 0);
+                                       success_count > 0,
+                                       keys.size(),
+                                       static_cast<size_t>(success_count));
             });
     std::vector<int64_t> results;
     results.reserve(internal_results.size());
@@ -4811,7 +4815,8 @@ std::vector<int> RealClient::batch_put_from_multi_buffers(
                     "batch_put_from_multi_buffers", total_bytes, latency_us);
                 // L3 write latency
                 client_->ObserveL3Write(latency_us, total_bytes,
-                                         success_count > 0);
+                                         success_count > 0,
+                                         keys.size(), 0);
             });
     std::vector<int> results;
     results.reserve(internal_results.size());
@@ -4887,7 +4892,9 @@ std::vector<int> RealClient::batch_get_into_multi_buffers(
                     total_bytes, latency_us);
                 // L3 read latency
                 client_->ObserveL3Read(latency_us, total_bytes,
-                                       success_count > 0);
+                                       success_count > 0,
+                                       keys.size(),
+                                       static_cast<size_t>(success_count));
             });
     std::vector<int> results;
     results.reserve(internal_results.size());

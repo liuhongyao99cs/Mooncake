@@ -552,16 +552,18 @@ class Client {
     }
 
     void ObserveL3Write(uint64_t latency_us, uint64_t bytes,
-                        bool success = true) {
+                        bool success = true,
+                        size_t batch_key_count = 1, size_t hit_count = 0) {
         if (metrics_ != nullptr) {
-            metrics_->ObserveL3Write(latency_us, bytes, success);
+            metrics_->ObserveL3Write(latency_us, bytes, success, batch_key_count, hit_count);
         }
     }
 
     void ObserveL3Read(uint64_t latency_us, uint64_t bytes,
-                       bool success = true) {
+                       bool success = true,
+                       size_t batch_key_count = 1, size_t hit_count = 0) {
         if (metrics_ != nullptr) {
-            metrics_->ObserveL3Read(latency_us, bytes, success);
+            metrics_->ObserveL3Read(latency_us, bytes, success, batch_key_count, hit_count);
         }
     }
 

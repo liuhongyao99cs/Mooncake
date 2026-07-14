@@ -1110,7 +1110,8 @@ std::vector<int> DummyClient::batch_put_from(
     int success_count = 0;
     for (const auto& r : results) { if (r == 0) success_count++; }
     if (metrics_) {
-        metrics_->ObserveL3Write(latency, successful_bytes, success_count > 0);
+        metrics_->ObserveL3Write(latency, successful_bytes, success_count > 0,
+                                  keys.size(), 0);
     }
 
     return results;
@@ -1147,7 +1148,9 @@ std::vector<int64_t> DummyClient::batch_get_into(
     int success_count = 0;
     for (const auto& r : results) { if (r > 0) success_count++; }
     if (metrics_) {
-        metrics_->ObserveL3Read(latency, total_bytes, success_count > 0);
+        metrics_->ObserveL3Read(latency, total_bytes, success_count > 0,
+                                 keys.size(),
+                                 static_cast<size_t>(success_count));
     }
 
     return results;
@@ -1190,7 +1193,8 @@ std::vector<int> DummyClient::batch_put_from_multi_buffers(
     int success_count = 0;
     for (const auto& r : results) { if (r == 0) success_count++; }
     if (metrics_) {
-        metrics_->ObserveL3Write(latency, successful_bytes, success_count > 0);
+        metrics_->ObserveL3Write(latency, successful_bytes, success_count > 0,
+                                  keys.size(), 0);
     }
     return results;
 }
@@ -1224,7 +1228,9 @@ std::vector<int> DummyClient::batch_get_into_multi_buffers(
     int success_count = 0;
     for (const auto& r : results) { if (r > 0) success_count++; }
     if (metrics_) {
-        metrics_->ObserveL3Read(latency, total_bytes, success_count > 0);
+        metrics_->ObserveL3Read(latency, total_bytes, success_count > 0,
+                                 keys.size(),
+                                 static_cast<size_t>(success_count));
     }
     return results;
 }

@@ -679,6 +679,14 @@ struct L3Metric {
                               "Successful L3 write requests", labels),
           read_success_count("mooncake_l3_read_success_count_total",
                              "Successful L3 read requests", labels),
+          read_hit_count("mooncake_l3_read_hit_count_total",
+                         "L3 read keys found (hit)", labels),
+          read_miss_count("mooncake_l3_read_miss_count_total",
+                          "L3 read keys not found (miss)", labels),
+          read_batch_keys("mooncake_l3_read_batch_keys_total",
+                          "Total keys requested in all L3 read batches", labels),
+          write_batch_keys("mooncake_l3_write_batch_keys_total",
+                           "Total keys in all L3 write batches", labels),
           start_time_(std::chrono::steady_clock::now()) {}
 
     ylt::metric::histogram_t write_latency_us;
@@ -689,11 +697,17 @@ struct L3Metric {
     ylt::metric::counter_t   read_bytes;
     ylt::metric::counter_t   write_success_count;
     ylt::metric::counter_t   read_success_count;
+    ylt::metric::counter_t   read_hit_count;
+    ylt::metric::counter_t   read_miss_count;
+    ylt::metric::counter_t   read_batch_keys;
+    ylt::metric::counter_t   write_batch_keys;
 
-    void ObserveWrite(uint64_t latency_us, uint64_t bytes, bool success) {
+    void ObserveWrite(uint64_t latency_us, uint64_t bytes, bool success,
+                      size_t batch_key_count = 1, size_t hit_count = 0) {
         write_latency_us.observe(latency_us);
         write_count.inc();
         write_bytes.inc(bytes);
+        write_batch_keys.inc(batch_key_count);
         if (success) write_success_count.inc();
         {
             std::lock_guard<std::mutex> lock(raw_samples_mutex_);
@@ -706,13 +720,19 @@ struct L3Metric {
             if (latency_us > write_latency_max_) write_latency_max_ = latency_us;
         }
         LOG(INFO) << "[L3] WRITE: latency=" << latency_us << "us, bytes=" << bytes
+                  << ", batch_keys=" << batch_key_count
                   << ", success=" << (success ? "true" : "false");
     }
 
-    void ObserveRead(uint64_t latency_us, uint64_t bytes, bool success) {
+    void ObserveRead(uint64_t latency_us, uint64_t bytes, bool success,
+                     size_t batch_key_count = 1, size_t hit_count = 0) {
         read_latency_us.observe(latency_us);
         read_count.inc();
         read_bytes.inc(bytes);
+        read_batch_keys.inc(batch_key_count);
+        read_hit_count.inc(hit_count);
+        read_miss_count.inc(batch_key_count > hit_count
+                             ? batch_key_count - hit_count : 0);
         if (success) read_success_count.inc();
         {
             std::lock_guard<std::mutex> lock(raw_samples_mutex_);
@@ -725,6 +745,10 @@ struct L3Metric {
             if (latency_us > read_latency_max_) read_latency_max_ = latency_us;
         }
         LOG(INFO) << "[L3] READ: latency=" << latency_us << "us, bytes=" << bytes
+                  << ", batch_keys=" << batch_key_count
+                  << ", hit=" << hit_count
+                  << ", miss=" << (batch_key_count > hit_count
+                                   ? batch_key_count - hit_count : 0)
                   << ", success=" << (success ? "true" : "false");
     }
 
@@ -737,6 +761,10 @@ struct L3Metric {
         read_bytes.serialize(str);
         write_success_count.serialize(str);
         read_success_count.serialize(str);
+        read_hit_count.serialize(str);
+        read_miss_count.serialize(str);
+        read_batch_keys.serialize(str);
+        write_batch_keys.serialize(str);
     }
 
     std::string summary_metrics() {
@@ -774,6 +802,20 @@ struct L3Metric {
                << byte_size_to_string(static_cast<int64_t>(r_bytes / elapsed_s))
                << "/s";
         ss << "\n";
+
+        // Hit/Miss stats
+        auto r_hits = read_hit_count.value();
+        auto r_misses = read_miss_count.value();
+        auto r_batch_keys_total = read_batch_keys.value();
+        auto w_batch_keys_total = write_batch_keys.value();
+        ss << "\n=== L3 Cache Hit/Miss Stats ===\n";
+        ss << "Read:  total_keys=" << r_batch_keys_total
+           << ", hit=" << r_hits << ", miss=" << r_misses
+           << ", hit_rate=" << (r_batch_keys_total > 0
+                ? std::fixed << std::setprecision(2)
+                << (100.0 * r_hits / r_batch_keys_total) : 0.0) << "%\n";
+        ss << "Write: total_keys=" << w_batch_keys_total
+           << ", avg_keys_per_batch=" << (w_cnt > 0 ? w_batch_keys_total / w_cnt : 0) << "\n";
 
         // Latency percentiles
         ss << "\n=== L3 Latency Summary (microseconds) ===\n";
@@ -862,13 +904,15 @@ struct ClientMetric {
     }
 
     void ObserveL3Write(uint64_t latency_us, uint64_t bytes,
-                        bool success = true) {
-        l3_metric.ObserveWrite(latency_us, bytes, success);
+                        bool success = true,
+                        size_t batch_key_count = 1, size_t hit_count = 0) {
+        l3_metric.ObserveWrite(latency_us, bytes, success, batch_key_count, hit_count);
     }
 
     void ObserveL3Read(uint64_t latency_us, uint64_t bytes,
-                       bool success = true) {
-        l3_metric.ObserveRead(latency_us, bytes, success);
+                       bool success = true,
+                       size_t batch_key_count = 1, size_t hit_count = 0) {
+        l3_metric.ObserveRead(latency_us, bytes, success, batch_key_count, hit_count);
     }
 
     void serialize(std::string& str);
