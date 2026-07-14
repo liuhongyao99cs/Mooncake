@@ -339,6 +339,13 @@ if [[ "$MC_ENABLE_SSD_OFFLOAD" == "1" ]]; then
     export MOONCAKE_ENABLE_SSD_OFFLOAD=1
     export MOONCAKE_OFFLOAD_FILE_STORAGE_PATH="$MC_SSD_OFFLOAD_PATH"
 
+    # ★ 关键: 设置 Mooncake 内部 SSD 淘汰阈值 (bytes)
+    #   不设的话 Mooncake 默认用磁盘总容量的 90% (~385GB), 远超实际可用空间.
+    #   storage_backend.cpp 读取此环境变量控制 bucket eviction.
+    export MOONCAKE_OFFLOAD_BUCKET_MAX_TOTAL_SIZE=$(( MC_SSD_MAX_GB * 1024 * 1024 * 1024 ))
+    export MOONCAKE_OFFLOAD_TOTAL_SIZE_LIMIT_BYTES=$(( MC_SSD_MAX_GB * 1024 * 1024 * 1024 ))
+    echo "[mooncake] SSD offload bucket max_total_size: ${MC_SSD_MAX_GB}GB (${MOONCAKE_OFFLOAD_BUCKET_MAX_TOTAL_SIZE} bytes)"
+
     # 官方 benchmark (ssd-offload-benchmark-results.html) 额外给了这两个环境变量:
     #   MOONCAKE_OFFLOAD_LOCAL_BUFFER_SIZE_BYTES: 本地缓冲区, 吸收突发写入后再落盘 SSD
     #   MOONCAKE_OFFLOAD_USE_URING:              用 io_uring 加速磁盘 I/O
@@ -404,18 +411,20 @@ LAUNCH_ARGS=(
     --port "$PORT"
     --tp 1
     --context-length 8192
-    --mem-fraction-static 0.62
+    --mem-fraction-static 0.55
     --max-running-requests 64
-    --page-size 64
+    --page-size 16
     --kv-cache-dtype fp8_e4m3
     --enable-hierarchical-cache
-    --hicache-ratio 1.3
+    --hicache-ratio 1.2
     --hicache-mem-layout page_first_direct
+    --hicache-storage-prefetch-policy wait_complete
 )
 
 if [[ "$USE_MOONCAKE" == "1" ]]; then
     echo "============================================================"
     echo " SGLang Server (Mooncake L3: DRAM ${MC_DRAM_GB}GB buffer → SSD ${MC_SSD_OFFLOAD_PATH})"
+    echo "  SSD max: ${MC_SSD_MAX_GB}GB (MOONCAKE_OFFLOAD_BUCKET_MAX_TOTAL_SIZE=${MOONCAKE_OFFLOAD_BUCKET_MAX_TOTAL_SIZE})"
     echo "============================================================"
 
     # 注意: mooncake 后端要求 --hicache-mem-layout 为 page_first / page_first_direct
@@ -429,7 +438,7 @@ if [[ "$USE_MOONCAKE" == "1" ]]; then
     #   只是读的时候没等到就被放弃了)。这很可能是你之前感觉"开不了 SSD offload"的真正原因之一.
     LAUNCH_ARGS+=(
         --hicache-storage-backend mooncake
-        --hicache-storage-backend-extra-config '{"prefetch_threshold": 256}'
+        --hicache-storage-backend-extra-config '{"prefetch_threshold": 16}'
     )
 else
     echo "============================================================"
