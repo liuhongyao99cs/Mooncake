@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <fstream>
 #include <map>
 #include <sstream>
 #include <string_view>
@@ -300,6 +301,24 @@ bool MasterAdminServer::Start() {
                         << snapshot.leader_view->view_version;
                 }
                 LOG(INFO) << log_stream.str();
+
+                // Write to dedicated log file if MC_MASTER_METRIC_LOG_FILE is set
+                const char* master_log_env = std::getenv("MC_MASTER_METRIC_LOG_FILE");
+                if (master_log_env && master_log_env[0] != '\0') {
+                    std::ofstream ofs(master_log_env, std::ios::app);
+                    if (ofs.is_open()) {
+                        auto now = std::chrono::system_clock::now();
+                        auto time_t = std::chrono::system_clock::to_time_t(now);
+                        std::string time_str = std::ctime(&time_t);
+                        if (!time_str.empty() && time_str.back() == '\n') {
+                            time_str.pop_back();
+                        }
+                        ofs << "[" << time_str << "] Master Metrics:\n"
+                            << MasterMetricManager::instance().get_summary_string() << "\n\n";
+                        ofs.close();
+                    }
+                }
+
                 if (metric_report_stop_sem_.try_acquire_for(
                         std::chrono::seconds(kMetricReportIntervalSeconds))) {
                     break;
