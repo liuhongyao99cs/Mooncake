@@ -695,6 +695,18 @@ struct L3Metric {
         write_count.inc();
         write_bytes.inc(bytes);
         if (success) write_success_count.inc();
+        {
+            std::lock_guard<std::mutex> lock(raw_samples_mutex_);
+            if (write_latencies_raw_.size() < kMaxRawSamples) {
+                write_latencies_raw_.push_back(latency_us);
+                write_bytes_raw_.push_back(bytes);
+            }
+            write_latency_sum_ += latency_us;
+            if (latency_us < write_latency_min_) write_latency_min_ = latency_us;
+            if (latency_us > write_latency_max_) write_latency_max_ = latency_us;
+        }
+        LOG(INFO) << "[L3] WRITE: latency=" << latency_us << "us, bytes=" << bytes
+                  << ", success=" << (success ? "true" : "false");
     }
 
     void ObserveRead(uint64_t latency_us, uint64_t bytes, bool success) {
@@ -702,6 +714,18 @@ struct L3Metric {
         read_count.inc();
         read_bytes.inc(bytes);
         if (success) read_success_count.inc();
+        {
+            std::lock_guard<std::mutex> lock(raw_samples_mutex_);
+            if (read_latencies_raw_.size() < kMaxRawSamples) {
+                read_latencies_raw_.push_back(latency_us);
+                read_bytes_raw_.push_back(bytes);
+            }
+            read_latency_sum_ += latency_us;
+            if (latency_us < read_latency_min_) read_latency_min_ = latency_us;
+            if (latency_us > read_latency_max_) read_latency_max_ = latency_us;
+        }
+        LOG(INFO) << "[L3] READ: latency=" << latency_us << "us, bytes=" << bytes
+                  << ", success=" << (success ? "true" : "false");
     }
 
     void serialize(std::string& str) {
@@ -753,51 +777,58 @@ struct L3Metric {
 
         // Latency percentiles
         ss << "\n=== L3 Latency Summary (microseconds) ===\n";
-        ss << "Write: " << format_l3_latency_summary(write_latency_us)
+        ss << "Write: " << format_l3_latency_summary(write_latency_us,
+               write_latencies_raw_, write_latency_sum_,
+               write_latency_min_, write_latency_max_)
            << "\n";
-        ss << "Read:  " << format_l3_latency_summary(read_latency_us) << "\n";
+        ss << "Read:  " << format_l3_latency_summary(read_latency_us,
+               read_latencies_raw_, read_latency_sum_,
+               read_latency_min_, read_latency_max_)
+           << "\n";
         return ss.str();
     }
 
    private:
+    static constexpr size_t kMaxRawSamples = 100000;
+    std::mutex raw_samples_mutex_;
+    std::vector<uint64_t> write_latencies_raw_;
+    std::vector<uint64_t> read_latencies_raw_;
+    std::vector<uint64_t> write_bytes_raw_;
+    std::vector<uint64_t> read_bytes_raw_;
+    uint64_t write_latency_sum_ = 0;
+    uint64_t read_latency_sum_ = 0;
+    uint64_t write_latency_min_ = UINT64_MAX;
+    uint64_t write_latency_max_ = 0;
+    uint64_t read_latency_min_ = UINT64_MAX;
+    uint64_t read_latency_max_ = 0;
     std::chrono::steady_clock::time_point start_time_;
 
-    std::string format_l3_latency_summary(ylt::metric::histogram_t& hist) {
-        auto sum_ptr = const_cast<ylt::metric::histogram_t&>(hist)
-                           .get_bucket_counts();
-        if (sum_ptr.empty()) return "No data";
-
-        int64_t total_count = 0;
-        for (auto& bucket : sum_ptr) total_count += bucket->value();
+    std::string format_l3_latency_summary(ylt::metric::histogram_t& hist,
+                                          const std::vector<uint64_t>& raw_samples,
+                                          uint64_t sum, uint64_t min_val,
+                                          uint64_t max_val) {
+        int64_t total_count = static_cast<int64_t>(raw_samples.size());
         if (total_count == 0) return "No data";
 
         std::stringstream ss;
         ss << "count=" << total_count;
+        ss << ", avg=" << (sum / total_count) << "us";
 
-        int64_t p95_target = (total_count * 95) / 100;
-        int64_t p99_target = (total_count * 99) / 100;
-        int64_t cumulative = 0;
+        std::vector<uint64_t> sorted = raw_samples;
+        std::sort(sorted.begin(), sorted.end());
 
-        double p95_bucket = 0, p99_bucket = 0, max_bucket = 0;
-        for (size_t i = 0; i < sum_ptr.size() && i < kLatencyBucket.size();
-             ++i) {
-            cumulative += sum_ptr[i]->value();
-            if (p95_bucket == 0 && cumulative >= p95_target)
-                p95_bucket = kLatencyBucket[i];
-            if (p99_bucket == 0 && cumulative >= p99_target)
-                p99_bucket = kLatencyBucket[i];
-        }
-        for (size_t i = sum_ptr.size(); i > 0; --i) {
-            size_t idx = i - 1;
-            if (idx < kLatencyBucket.size() &&
-                sum_ptr[idx]->value() > 0) {
-                max_bucket = kLatencyBucket[idx];
-                break;
-            }
-        }
-        if (p95_bucket > 0) ss << ", p95<" << p95_bucket << "μs";
-        if (p99_bucket > 0) ss << ", p99<" << p99_bucket << "μs";
-        if (max_bucket > 0) ss << ", max<" << max_bucket << "μs";
+        if (min_val != UINT64_MAX) ss << ", min=" << min_val << "us";
+        ss << ", max=" << max_val << "us";
+
+        size_t p50_idx = total_count / 2;
+        size_t p95_idx = (total_count * 95) / 100;
+        size_t p99_idx = (total_count * 99) / 100;
+        if (p95_idx >= sorted.size()) p95_idx = sorted.size() - 1;
+        if (p99_idx >= sorted.size()) p99_idx = sorted.size() - 1;
+
+        ss << ", p50=" << sorted[p50_idx] << "us";
+        ss << ", p95=" << sorted[p95_idx] << "us";
+        ss << ", p99=" << sorted[p99_idx] << "us";
         return ss.str();
     }
 };
