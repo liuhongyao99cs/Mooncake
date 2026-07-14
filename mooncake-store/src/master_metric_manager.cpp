@@ -1486,28 +1486,34 @@ void MasterMetricManager::inc_nof_eviction_fail() {
 
 void MasterMetricManager::observe_eviction_latency_us(int64_t latency_us) {
     eviction_latency_us_.observe(latency_us);
+    eviction_lat_precise_.record(latency_us);
 }
 
 void MasterMetricManager::observe_mem_eviction_latency_us(int64_t latency_us) {
     mem_eviction_latency_us_.observe(latency_us);
+    mem_eviction_lat_precise_.record(latency_us);
 }
 
 void MasterMetricManager::observe_nof_eviction_latency_us(int64_t latency_us) {
     nof_eviction_latency_us_.observe(latency_us);
+    nof_eviction_lat_precise_.record(latency_us);
 }
 
 void MasterMetricManager::observe_cache_lookup_latency_us(int64_t latency_us) {
     cache_lookup_latency_us_.observe(latency_us);
+    cache_lookup_lat_precise_.record(latency_us);
 }
 
 void MasterMetricManager::observe_cache_lookup_hit_latency_us(
     int64_t latency_us) {
     cache_lookup_hit_latency_us_.observe(latency_us);
+    cache_lookup_hit_lat_precise_.record(latency_us);
 }
 
 void MasterMetricManager::observe_cache_lookup_miss_latency_us(
     int64_t latency_us) {
     cache_lookup_miss_latency_us_.observe(latency_us);
+    cache_lookup_miss_lat_precise_.record(latency_us);
 }
 
 int64_t MasterMetricManager::get_eviction_success() {
@@ -1988,62 +1994,6 @@ void MasterMetricManager::add_stat_to_dict(
     if (it != stat_names_.end()) {
         dict[it->first] = value;
     }
-}
-
-// --- Helper: format histogram latency stats for summary output ---
-// Extracts count, sum (for avg), and approximate p50/p95/p99/max from
-// the histogram bucket counts.  Bucket boundaries must match the
-// initialization list in the constructor.
-static const std::vector<double> kMasterLatencyBuckets = {
-    1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000};
-
-std::string format_master_latency_histogram(
-    ylt::metric::histogram_t& hist, const std::string& label) {
-    auto bucket_counts =
-        const_cast<ylt::metric::histogram_t&>(hist).get_bucket_counts();
-
-    int64_t total_count = 0;
-    for (auto& bucket : bucket_counts) {
-        total_count += bucket->value();
-    }
-
-    if (total_count == 0) {
-        return label + ": No data";
-    }
-
-    // Compute cumulative counts and approximate percentiles
-    int64_t cumulative = 0;
-    double p50 = 0, p95 = 0, p99 = 0, max_bucket = 0;
-    int64_t p50_target = (total_count * 50) / 100;
-    int64_t p95_target = (total_count * 95) / 100;
-    int64_t p99_target = (total_count * 99) / 100;
-    bool p50_found = false, p95_found = false, p99_found = false;
-
-    for (size_t i = 0; i < bucket_counts.size(); ++i) {
-        cumulative += bucket_counts[i]->value();
-        double boundary = (i < kMasterLatencyBuckets.size())
-                              ? kMasterLatencyBuckets[i]
-                              : kMasterLatencyBuckets.back();
-        max_bucket = boundary;
-        if (!p50_found && cumulative >= p50_target) {
-            p50 = boundary;
-            p50_found = true;
-        }
-        if (!p95_found && cumulative >= p95_target) {
-            p95 = boundary;
-            p95_found = true;
-        }
-        if (!p99_found && cumulative >= p99_target) {
-            p99 = boundary;
-            p99_found = true;
-        }
-    }
-
-    std::stringstream ss;
-    ss << label << ": count=" << total_count
-       << ", p50<" << p50 << "us, p95<" << p95 << "us, p99<" << p99
-       << "us, max_bucket<" << max_bucket << "us";
-    return ss.str();
 }
 
 // --- Human-Readable Summary ---
@@ -2617,20 +2567,14 @@ std::string MasterMetricManager::get_summary_string(
        << "Fail=" << snapshot_fail_.value();
 
     // --- Latency Summary for Eviction and Cache Lookup ---
-    // Master-side latency stats, printed alongside counters so the log
-    // shows both "how many" and "how long" in one place.
+    // Uses PreciseLatencyTracker for exact avg/p50/p95/p99/min/max values.
     ss << "\n=== Eviction & Cache Lookup Latency (microseconds) ===\n";
-    ss << format_master_latency_histogram(eviction_latency_us_, "Eviction(total)");
-    ss << "\n";
-    ss << format_master_latency_histogram(mem_eviction_latency_us_, "Eviction(mem)");
-    ss << "\n";
-    ss << format_master_latency_histogram(nof_eviction_latency_us_, "Eviction(nof)");
-    ss << "\n";
-    ss << format_master_latency_histogram(cache_lookup_latency_us_, "CacheLookup(total)");
-    ss << "\n";
-    ss << format_master_latency_histogram(cache_lookup_hit_latency_us_, "CacheLookup(hit)");
-    ss << "\n";
-    ss << format_master_latency_histogram(cache_lookup_miss_latency_us_, "CacheLookup(miss)");
+    ss << eviction_lat_precise_.format("Eviction(total)") << "\n";
+    ss << mem_eviction_lat_precise_.format("Eviction(mem)") << "\n";
+    ss << nof_eviction_lat_precise_.format("Eviction(nof)") << "\n";
+    ss << cache_lookup_lat_precise_.format("CacheLookup(total)") << "\n";
+    ss << cache_lookup_hit_lat_precise_.format("CacheLookup(hit)") << "\n";
+    ss << cache_lookup_miss_lat_precise_.format("CacheLookup(miss)");
 
     return ss.str();
 }

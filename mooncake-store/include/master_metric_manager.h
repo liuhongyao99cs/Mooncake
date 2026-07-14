@@ -697,6 +697,61 @@ class MasterMetricManager {
     ylt::metric::histogram_t cache_lookup_hit_latency_us_;
     ylt::metric::histogram_t cache_lookup_miss_latency_us_;
 
+    // --- Precise latency tracking (stores raw values for exact stats) ---
+    struct PreciseLatencyTracker {
+        std::mutex mtx;
+        std::vector<int64_t> values;  // raw latency values in microseconds
+        int64_t sum = 0;
+        int64_t min_val = INT64_MAX;
+        int64_t max_val = 0;
+        size_t count = 0;
+        static constexpr size_t kMaxValues = 100000;  // cap to avoid OOM
+
+        void record(int64_t latency_us) {
+            std::lock_guard<std::mutex> lock(mtx);
+            if (count < kMaxValues) {
+                values.push_back(latency_us);
+            }
+            sum += latency_us;
+            if (latency_us < min_val) min_val = latency_us;
+            if (latency_us > max_val) max_val = latency_us;
+            count++;
+        }
+
+        // Returns formatted string: count=X, avg=Y, min=Z, max=W, p50=..., p95=..., p99=...
+        std::string format(const std::string& label) const {
+            if (count == 0) return label + ": No data";
+            std::vector<int64_t> sorted;
+            {
+                std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mtx));
+                sorted = values;
+            }
+            std::sort(sorted.begin(), sorted.end());
+            size_t n = sorted.size();
+            auto pct = [&](double p) -> int64_t {
+                if (n == 0) return 0;
+                size_t idx = (size_t)(p * (n - 1));
+                return sorted[idx];
+            };
+            std::ostringstream ss;
+            ss << label << ": count=" << count
+               << ", avg=" << (sum / (int64_t)count) << "us"
+               << ", min=" << (min_val == INT64_MAX ? 0 : min_val) << "us"
+               << ", max=" << max_val << "us"
+               << ", p50=" << pct(0.50) << "us"
+               << ", p95=" << pct(0.95) << "us"
+               << ", p99=" << pct(0.99) << "us";
+            return ss.str();
+        }
+    };
+
+    PreciseLatencyTracker eviction_lat_precise_;
+    PreciseLatencyTracker mem_eviction_lat_precise_;
+    PreciseLatencyTracker nof_eviction_lat_precise_;
+    PreciseLatencyTracker cache_lookup_lat_precise_;
+    PreciseLatencyTracker cache_lookup_hit_lat_precise_;
+    PreciseLatencyTracker cache_lookup_miss_lat_precise_;
+
     // PutStart Discard Metrics
     ylt::metric::counter_t put_start_discard_cnt_;
     ylt::metric::counter_t put_start_release_cnt_;
