@@ -5,6 +5,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <thread>
 
 namespace mooncake {
@@ -218,7 +219,29 @@ void ClientMetric::StartMetricsReportingThread() {
                 if (!bandwidth_report.empty()) {
                     report += "\n" + bandwidth_report;
                 }
-                LOG(INFO) << report;
+
+                // Write to dedicated log file if MC_STORE_CLIENT_METRIC_LOG_FILE is set,
+                // otherwise fall back to LOG(INFO)
+                const char* log_file_env = std::getenv("MC_STORE_CLIENT_METRIC_LOG_FILE");
+                if (log_file_env && log_file_env[0] != '\0') {
+                    std::ofstream ofs(log_file_env, std::ios::app);
+                    if (ofs.is_open()) {
+                        auto now = std::chrono::system_clock::now();
+                        auto time_t = std::chrono::system_clock::to_time_t(now);
+                        std::string time_str = std::ctime(&time_t);
+                        if (!time_str.empty() && time_str.back() == '\n') {
+                            time_str.pop_back();
+                        }
+                        ofs << "[" << time_str << "] " << report << "\n";
+                        ofs.close();
+                    } else {
+                        LOG(WARNING) << "Failed to open metric log file: " << log_file_env
+                                     << ", falling back to LOG(INFO)";
+                        LOG(INFO) << report;
+                    }
+                } else {
+                    LOG(INFO) << report;
+                }
             }
             LOG(INFO) << "Client metrics reporting thread stopped";
         });
