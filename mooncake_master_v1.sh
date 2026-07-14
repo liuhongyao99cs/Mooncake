@@ -97,6 +97,16 @@ if [[ "$MC_ENABLE_OFFLOAD" == "true" ]]; then
         echo "[mooncake] WARNING: 当前 mooncake_master 二进制不支持 --enable_offload flag,"
         echo "[mooncake]          已自动跳过。若 SSD offload 不生效, 请升级 mooncake-transfer-engine。"
     fi
+    # offload_on_evict: eviction 时先把数据 offload 到 SSD 再删内存, 避免数据丢失
+    if echo "$MOONCAKE_MASTER_HELP" | grep -q -- "-offload_on_evict"; then
+        EXTRA_MASTER_ARGS+=(--offload_on_evict=true)
+        echo "[mooncake] master offload-on-evict: enabled (--offload_on_evict=true)"
+    fi
+    # offload_force_evict=false: offload 队列满时不强制驱逐, 保留数据
+    if echo "$MOONCAKE_MASTER_HELP" | grep -q -- "-offload_force_evict"; then
+        EXTRA_MASTER_ARGS+=(--offload_force_evict=false)
+        echo "[mooncake] master offload-force-evict: disabled (--offload_force_evict=false)"
+    fi
 fi
 
 # 检测是否支持 --metrics_port (老版本可能没有)
