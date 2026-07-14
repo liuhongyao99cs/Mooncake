@@ -326,6 +326,34 @@ MasterMetricManager::MasterMetricManager()
       nof_evicted_size_("master_evicted_size_bytes_nof",
                         "Total bytes of evicted objects in nof"),
 
+      // Initialize Eviction Latency Histograms (us: 1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000)
+      eviction_latency_us_(
+          "master_eviction_latency_us",
+          "Latency distribution of eviction operations in microseconds",
+          {1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}),
+      mem_eviction_latency_us_(
+          "master_mem_eviction_latency_us",
+          "Latency distribution of memory eviction operations in microseconds",
+          {1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}),
+      nof_eviction_latency_us_(
+          "master_nof_eviction_latency_us",
+          "Latency distribution of NoF eviction operations in microseconds",
+          {1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}),
+
+      // Initialize Cache Lookup Latency Histograms (us: 1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000)
+      cache_lookup_latency_us_(
+          "master_cache_lookup_latency_us",
+          "Latency distribution of GetReplicaList lookups in microseconds",
+          {1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}),
+      cache_lookup_hit_latency_us_(
+          "master_cache_lookup_hit_latency_us",
+          "Latency distribution of cache hit lookups in microseconds",
+          {1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}),
+      cache_lookup_miss_latency_us_(
+          "master_cache_lookup_miss_latency_us",
+          "Latency distribution of cache miss lookups in microseconds",
+          {1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000}),
+
       // Initialize Discarded Replicas Counters
       put_start_discard_cnt_("master_put_start_discard_cnt",
                              "Total number of discarded PutStart operations"),
@@ -595,6 +623,14 @@ void MasterMetricManager::update_metrics_for_zero_output() {
     // Update Histogram (use observe(0) to mark as changed)
     value_size_distribution_.observe(0);
     nof_heartbeat_probe_latency_ms_.observe(0);
+
+    // Update Latency Histograms
+    eviction_latency_us_.observe(0);
+    mem_eviction_latency_us_.observe(0);
+    nof_eviction_latency_us_.observe(0);
+    cache_lookup_latency_us_.observe(0);
+    cache_lookup_hit_latency_us_.observe(0);
+    cache_lookup_miss_latency_us_.observe(0);
 
     // Note: dynamic_gauge_1t (mem_allocated_size_per_segment_ and
     // mem_total_capacity_per_segment_) are not initialized here because they
@@ -1448,6 +1484,32 @@ void MasterMetricManager::inc_nof_eviction_fail() {
     nof_eviction_attempts_.inc();
 }
 
+void MasterMetricManager::observe_eviction_latency_us(int64_t latency_us) {
+    eviction_latency_us_.observe(latency_us);
+}
+
+void MasterMetricManager::observe_mem_eviction_latency_us(int64_t latency_us) {
+    mem_eviction_latency_us_.observe(latency_us);
+}
+
+void MasterMetricManager::observe_nof_eviction_latency_us(int64_t latency_us) {
+    nof_eviction_latency_us_.observe(latency_us);
+}
+
+void MasterMetricManager::observe_cache_lookup_latency_us(int64_t latency_us) {
+    cache_lookup_latency_us_.observe(latency_us);
+}
+
+void MasterMetricManager::observe_cache_lookup_hit_latency_us(
+    int64_t latency_us) {
+    cache_lookup_hit_latency_us_.observe(latency_us);
+}
+
+void MasterMetricManager::observe_cache_lookup_miss_latency_us(
+    int64_t latency_us) {
+    cache_lookup_miss_latency_us_.observe(latency_us);
+}
+
 int64_t MasterMetricManager::get_eviction_success() {
     return eviction_success_.value();
 }
@@ -1817,6 +1879,16 @@ std::string MasterMetricManager::serialize_metrics() {
     serialize_metric(eviction_attempts_);
     serialize_metric(evicted_key_count_);
     serialize_metric(evicted_size_);
+
+    // Serialize Eviction Latency Histograms
+    serialize_metric(eviction_latency_us_);
+    serialize_metric(mem_eviction_latency_us_);
+    serialize_metric(nof_eviction_latency_us_);
+
+    // Serialize Cache Lookup Latency Histograms
+    serialize_metric(cache_lookup_latency_us_);
+    serialize_metric(cache_lookup_hit_latency_us_);
+    serialize_metric(cache_lookup_miss_latency_us_);
 
     // Serialize PutStart Discard Metrics
     serialize_metric(put_start_discard_cnt_);

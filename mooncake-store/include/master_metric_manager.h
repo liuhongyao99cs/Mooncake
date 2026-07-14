@@ -276,6 +276,16 @@ class MasterMetricManager {
     void inc_nof_eviction_success(int64_t key_count, int64_t size);
     void inc_nof_eviction_fail();  // not a single object is evicted
 
+    // Eviction Latency Metrics
+    void observe_eviction_latency_us(int64_t latency_us);
+    void observe_mem_eviction_latency_us(int64_t latency_us);
+    void observe_nof_eviction_latency_us(int64_t latency_us);
+
+    // Cache Lookup Latency Metrics
+    void observe_cache_lookup_latency_us(int64_t latency_us);
+    void observe_cache_lookup_hit_latency_us(int64_t latency_us);
+    void observe_cache_lookup_miss_latency_us(int64_t latency_us);
+
     // Eviction Metrics Getters
     // total eviction metrics
     int64_t get_eviction_success();
@@ -497,6 +507,17 @@ class MasterMetricManager {
         int64_t nof_eviction_attempts = 0;
         int64_t nof_evicted_key_count = 0;
         int64_t nof_evicted_size = 0;
+
+        // Eviction Latency Histograms
+        int64_t eviction_latency_us = 0;
+        int64_t mem_eviction_latency_us = 0;
+        int64_t nof_eviction_latency_us = 0;
+
+        // Cache Lookup Latency Histograms
+        int64_t cache_lookup_latency_us = 0;
+        int64_t cache_lookup_hit_latency_us = 0;
+        int64_t cache_lookup_miss_latency_us = 0;
+
         int64_t ping = 0;
         int64_t ping_fails = 0;
         int64_t mark_task_to_complete_requests = 0;
@@ -665,6 +686,16 @@ class MasterMetricManager {
     ylt::metric::counter_t nof_eviction_attempts_;
     ylt::metric::counter_t nof_evicted_key_count_;
     ylt::metric::counter_t nof_evicted_size_;
+
+    // Eviction Latency Histograms
+    ylt::metric::histogram_t eviction_latency_us_;
+    ylt::metric::histogram_t mem_eviction_latency_us_;
+    ylt::metric::histogram_t nof_eviction_latency_us_;
+
+    // Cache Lookup Latency Histograms
+    ylt::metric::histogram_t cache_lookup_latency_us_;
+    ylt::metric::histogram_t cache_lookup_hit_latency_us_;
+    ylt::metric::histogram_t cache_lookup_miss_latency_us_;
 
     // PutStart Discard Metrics
     ylt::metric::counter_t put_start_discard_cnt_;

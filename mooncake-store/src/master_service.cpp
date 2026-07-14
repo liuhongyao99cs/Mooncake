@@ -2496,6 +2496,7 @@ auto MasterService::GetReplicaListByRegex(const std::string& regex_pattern,
 auto MasterService::GetReplicaList(const std::string& key,
                                    const std::string& tenant_id)
     -> tl::expected<GetReplicaListResponse, ErrorCode> {
+    auto lookup_start = std::chrono::steady_clock::now();
     std::shared_lock<std::shared_mutex> shared_lock(snapshot_mutex_);
     const auto object_id = MakeObjectIdentityForRequest(key, tenant_id);
 
@@ -2508,6 +2509,11 @@ auto MasterService::GetReplicaList(const std::string& key,
 
         if (!accessor.Exists()) {
             VLOG(1) << "key=" << key << ", info=object_not_found";
+            auto lookup_end = std::chrono::steady_clock::now();
+            auto lookup_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                lookup_end - lookup_start).count();
+            MasterMetricManager::instance().observe_cache_lookup_latency_us(lookup_us);
+            MasterMetricManager::instance().observe_cache_lookup_miss_latency_us(lookup_us);
             return tl::make_unexpected(ErrorCode::OBJECT_NOT_FOUND);
         }
         const auto& metadata = accessor.Get();
@@ -2520,6 +2526,11 @@ auto MasterService::GetReplicaList(const std::string& key,
 
         if (replica_list.empty()) {
             LOG(WARNING) << "key=" << key << ", error=replica_not_ready";
+            auto lookup_end = std::chrono::steady_clock::now();
+            auto lookup_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                lookup_end - lookup_start).count();
+            MasterMetricManager::instance().observe_cache_lookup_latency_us(lookup_us);
+            MasterMetricManager::instance().observe_cache_lookup_miss_latency_us(lookup_us);
             return tl::make_unexpected(ErrorCode::REPLICA_IS_NOT_READY);
         }
 
@@ -2543,6 +2554,15 @@ auto MasterService::GetReplicaList(const std::string& key,
         } else {
             metadata.GrantLease(default_kv_lease_ttl_,
                                 default_kv_soft_pin_ttl_);
+        }
+
+        // Record cache lookup latency (hit path)
+        {
+            auto lookup_end = std::chrono::steady_clock::now();
+            auto lookup_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                lookup_end - lookup_start).count();
+            MasterMetricManager::instance().observe_cache_lookup_latency_us(lookup_us);
+            MasterMetricManager::instance().observe_cache_lookup_hit_latency_us(lookup_us);
         }
 
         // Promotion-on-hit eligibility: only when no MEMORY replica is
@@ -7058,6 +7078,7 @@ MasterService::EvictTenantMemoryForQuota(const std::string& tenant_id,
 
 void MasterService::BatchEvict(double evict_ratio_target,
                                double evict_ratio_lowerbound) {
+    auto evict_start = std::chrono::steady_clock::now();
     if (evict_ratio_target < evict_ratio_lowerbound) {
         LOG(ERROR) << "evict_ratio_target=" << evict_ratio_target
                    << ", evict_ratio_lowerbound=" << evict_ratio_lowerbound
@@ -7542,18 +7563,33 @@ void MasterService::BatchEvict(double evict_ratio_target,
 
     if (evicted_count > 0 || released_discarded_cnt > 0) {
         need_mem_eviction_ = false;
+        auto evict_end = std::chrono::steady_clock::now();
+        auto evict_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            evict_end - evict_start).count();
+        MasterMetricManager::instance().observe_eviction_latency_us(evict_us);
+        MasterMetricManager::instance().observe_mem_eviction_latency_us(evict_us);
         MasterMetricManager::instance().inc_eviction_success(evicted_count,
                                                              total_freed_size);
         MasterMetricManager::instance().inc_mem_eviction_success(
             evicted_count, total_freed_size);
     } else if (offload_deferred_count > 0) {
         need_mem_eviction_ = false;
+        auto evict_end = std::chrono::steady_clock::now();
+        auto evict_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            evict_end - evict_start).count();
+        MasterMetricManager::instance().observe_eviction_latency_us(evict_us);
+        MasterMetricManager::instance().observe_mem_eviction_latency_us(evict_us);
         MasterMetricManager::instance().inc_eviction_success(0, 0);
         MasterMetricManager::instance().inc_mem_eviction_success(0, 0);
     } else {
         if (total_eviction_base == 0) {
             need_mem_eviction_ = false;
         }
+        auto evict_end = std::chrono::steady_clock::now();
+        auto evict_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            evict_end - evict_start).count();
+        MasterMetricManager::instance().observe_eviction_latency_us(evict_us);
+        MasterMetricManager::instance().observe_mem_eviction_latency_us(evict_us);
         MasterMetricManager::instance().inc_eviction_fail();
         MasterMetricManager::instance().inc_mem_eviction_fail();
     }
@@ -7608,6 +7644,7 @@ void MasterService::BatchEvict(double evict_ratio_target,
 
 void MasterService::NoFBatchEvict(double evict_ratio_target,
                                   double evict_ratio_lowerbound) {
+    auto evict_start = std::chrono::steady_clock::now();
     if (evict_ratio_target < evict_ratio_lowerbound) {
         LOG(ERROR) << "nof_evict_ratio_target=" << evict_ratio_target
                    << ", nof_evict_ratio_lowerbound=" << evict_ratio_lowerbound
@@ -7681,6 +7718,11 @@ void MasterService::NoFBatchEvict(double evict_ratio_target,
 
     if (evicted_count > 0) {
         need_nof_eviction_ = false;
+        auto evict_end = std::chrono::steady_clock::now();
+        auto evict_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            evict_end - evict_start).count();
+        MasterMetricManager::instance().observe_eviction_latency_us(evict_us);
+        MasterMetricManager::instance().observe_nof_eviction_latency_us(evict_us);
         MasterMetricManager::instance().inc_eviction_success(evicted_count,
                                                              total_freed_size);
         MasterMetricManager::instance().inc_nof_eviction_success(
@@ -7689,6 +7731,11 @@ void MasterService::NoFBatchEvict(double evict_ratio_target,
         if (object_count == 0) {
             need_nof_eviction_ = false;
         }
+        auto evict_end = std::chrono::steady_clock::now();
+        auto evict_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            evict_end - evict_start).count();
+        MasterMetricManager::instance().observe_eviction_latency_us(evict_us);
+        MasterMetricManager::instance().observe_nof_eviction_latency_us(evict_us);
         MasterMetricManager::instance().inc_eviction_fail();
         MasterMetricManager::instance().inc_nof_eviction_fail();
     }
